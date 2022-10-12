@@ -162,26 +162,30 @@ public abstract class BenchmarkBase<T extends TaskBase<?>, S extends SolutionBas
 
         ArrayList<AlgorithmRunResult<S, A, T>> runResults = new ArrayList<>();
         if (runInParallel) {
-            ExecutorService pool = Executors.newFixedThreadPool(algorithms.size());
+            if(printInfo)
+                System.out.println("Threads: " + Runtime.getRuntime().availableProcessors());
+
+            ExecutorService pool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+            CompletionService<AlgorithmRunResult> completionService = new ExecutorCompletionService<>(pool);
             Set<Future<AlgorithmRunResult>> set = new HashSet<>();
             for (A algorithm : algorithms) {
-                Future<AlgorithmRunResult> future = pool.submit(algorithm.createRunnable(algorithm, (T) task.clone()));
-                set.add(future);
+                completionService.submit(algorithm.createRunnable(algorithm, (T) task.clone()));
             }
+            int countCompleted = 0;
 
-            for (Future<AlgorithmRunResult> future : set) {
+            while(countCompleted != algorithms.size()){
                 try {
-                    AlgorithmRunResult result = future.get();
-
+                    Future<AlgorithmRunResult> resultFuture = completionService.take(); //blocks if none available
+                    AlgorithmRunResult result = resultFuture.get();
+                    runResults.add(result);
+                    countCompleted++;
                     if (printInfo)
                         System.out.println("Total execution time for " + result.algorithm.getId() + ": " + result.algorithm.getLastRunDuration());
-
-                    //TODO generic feasibility check for result
-                    runResults.add(result);
                 } catch (InterruptedException | ExecutionException e) {
-                    e.printStackTrace();
+                    throw new RuntimeException(e);
                 }
             }
+
             pool.shutdown();
         } else {
             long start;
